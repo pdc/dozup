@@ -5,6 +5,7 @@ import os
 import shutil
 import tempfile
 import unittest
+import zipfile
 
 from mock import patch
 
@@ -92,20 +93,22 @@ class DozupQueueTests(unittest.TestCase):
         self.assertEqual('lemonsundae/sock.txt', self.file_path)
         self.then_file_should_be_claimed(self.file_path)
 
-    def test_yields_file_names_and_streams(self):
+    def test_yields_file_names_and_streams_from_files(self):
         self.given_a_file('todo/foo/bar.txt', 'content of bar')
+        self.given_a_zip_archive('todo/b/ar000001.zip', [
+            ('ar000001/bee.txt', 'forst'),
+            ('ar000001/cat.txt', 'seknd'),
+        ])
 
-        task_iter = self.dozup_queue.iter_tasks()
-        file_path, strm = next(task_iter)
+        self.when_iterating_over_tasks()
 
-        self.assertEqual('foo/bar.txt', file_path)
-        self.then_file_should_be_claimed(file_path)
-        content = strm.read()
-        self.assertEqual('content of bar', content)
-
-        with self.assertRaises(StopIteration):
-            next(task_iter)
-        self.assertTrue(strm.closed)
+        self.then_tasks_should_have_names_and_contents(set([
+            ('foo/bar.txt', 'content of bar'),
+            ('b/ar000001.zip/ar000001/bee.txt', 'forst'),
+            ('b/ar000001.zip/ar000001/cat.txt', 'seknd'),
+        ]))
+        self.then_file_should_be_done('foo/bar.txt')
+        self.then_file_should_be_done('b/ar000001.zip')
 
     # Helpers
 
@@ -114,6 +117,14 @@ class DozupQueueTests(unittest.TestCase):
         with open(os.path.join(self.dir_path, relative_path), 'wb') as strm:
             strm.write(content)
     given_a_file = create_a_file
+
+    def given_a_zip_archive(self, relative_path, file_name_contents):
+        os.makedirs(os.path.join(self.dir_path, os.path.dirname(relative_path)))
+        with open(os.path.join(self.dir_path, relative_path), 'wb') as strm:
+            archive = zipfile.ZipFile(strm, 'w', zipfile.ZIP_DEFLATED)
+            for file_name, contents in file_name_contents:
+                archive.writestr(file_name, contents.encode('UTF-8'))
+            archive.close()
 
     def when_claiming_file(self):
         self.file_path = self.dozup_queue.claim_file()
@@ -136,6 +147,18 @@ class DozupQueueTests(unittest.TestCase):
             mock_rename.side_effect = snatched_away
             self.file_path = self.dozup_queue.claim_file()
 
+    def when_iterating_over_tasks(self):
+        self.tasks = set()
+        for file_path, strm in self.dozup_queue.iter_tasks():
+            self.tasks.add((file_path, strm.read()))
+
     def then_file_should_be_claimed(self, file_path):
-        self.assertTrue(os.path.exists(os.path.join(self.dir_path, "doing", file_path)))
         self.assertFalse(os.path.exists(os.path.join(self.dir_path, "todo", file_path)))
+        self.assertTrue(os.path.exists(os.path.join(self.dir_path, "doing", file_path)))
+
+    def then_file_should_be_done(self, file_path):
+        self.assertFalse(os.path.exists(os.path.join(self.dir_path, "doing", file_path)))
+        self.assertTrue(os.path.exists(os.path.join(self.dir_path, "done", file_path)))
+
+    def then_tasks_should_have_names_and_contents(self, expected_tasks):
+        self.assertEqual(expected_tasks, self.tasks)

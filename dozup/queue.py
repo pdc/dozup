@@ -11,6 +11,7 @@ Run with something like the following:
 
 import errno
 import os
+import zipfile
 
 
 class DozupQueue(object):
@@ -30,6 +31,7 @@ class DozupQueue(object):
         self.dir_path = dir_path
         self.todo_dir = os.path.join(dir_path, 'todo')
         self.doing_dir = os.path.join(dir_path, 'doing')
+        self.done_dir = os.path.join(dir_path, 'done')
 
     def find_file(self):
         """Return a file from the TODO directory.
@@ -71,6 +73,14 @@ class DozupQueue(object):
             file_path = self.claim_file()
             if not file_path:
                 break
-            strm = open(os.path.join(self.doing_dir, file_path), 'rb')
-            yield file_path, strm
-            strm.close()
+            if file_path.endswith('.zip'):
+                archive = zipfile.ZipFile(os.path.join(self.doing_dir, file_path), 'r')
+                for info in archive.infolist():
+                    yield file_path + '/' + info.filename, archive.open(info)
+                archive.close()
+            else:
+                strm = open(os.path.join(self.doing_dir, file_path), 'rb')
+                yield file_path, strm
+                strm.close()
+            os.makedirs(os.path.join(self.done_dir, os.path.dirname(file_path)))
+            os.rename(os.path.join(self.doing_dir, file_path), os.path.join(self.done_dir, file_path))
