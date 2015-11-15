@@ -1,5 +1,15 @@
 # -*- coding: UTF-8 -*-
 
+
+"""Test for the dozup package.
+
+Run with something like the following:
+
+    python -m unittest tests.test_dozup
+"""
+
+
+import errno
 import os
 
 
@@ -32,10 +42,35 @@ class DozupQueue(object):
                 return os.path.relpath(file_path, self.todo_dir)
 
     def claim_file(self):
-        """Transfer a file from the DOING directory.
+        """Transfer a file from `todo` to `doing`.
+
+        The idea is to claim the file for processing by this process, in a way
+        that is safe from concurrent scripts operating on the same dir.
+
+        Returns --
+            file path relative to the `doing` directory.
         """
-        file_path = self.find_file()
-        os.makedirs(os.path.join(self.doing_dir, os.path.dirname(file_path)))
-        # The following is an atomic operation.
-        os.rename(os.path.join(self.todo_dir, file_path), os.path.join(self.doing_dir, file_path))
-        return file_path
+        while True:
+            file_path = self.find_file()
+            if not file_path:
+                break
+            os.makedirs(os.path.join(self.doing_dir, os.path.dirname(file_path)))
+            try:
+                # The following is an atomic operation.
+                os.rename(os.path.join(self.todo_dir, file_path), os.path.join(self.doing_dir, file_path))
+                return file_path
+            except OSError as err:
+                if err.errno in (errno.ENOENT, ):
+                    # Another process has snatched this file away from us.
+                    pass
+                else:
+                    raise
+
+    def iter_tasks(self):
+        while True:
+            file_path = self.claim_file()
+            if not file_path:
+                break
+            strm = open(os.path.join(self.doing_dir, file_path), 'rb')
+            yield file_path, strm
+            strm.close()
