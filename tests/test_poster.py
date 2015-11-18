@@ -9,7 +9,7 @@ import unittest
 
 import httpretty
 
-from dozup import DozupPoster
+from dozup import DozupPoster, DozupError
 
 
 class PosterTests(unittest.TestCase):
@@ -34,3 +34,34 @@ class PosterTests(unittest.TestCase):
         self.assertTrue(result)
         self.assertEqual(b'this is a message', httpretty.last_request().body)
         self.assertEqual(b'POST', httpretty.last_request().method)
+        self.assertEqual(b'/drop/', httpretty.last_request().path)
+
+    @httpretty.activate
+    def test_retains_plain_text_error_message(self):
+        httpretty.register_uri(
+            httpretty.POST, 'http://example.com/drop/',
+            status=503,
+            content_type='text/plain',
+            body='Sorry!')
+        self.poster = DozupPoster('http://example.com/drop/')
+        strm = io.BytesIO(b'this is a message')
+
+        result = self.poster.post('banko.txt', strm)
+
+        self.assertFalse(result)
+        self.assertEqual(DozupError(503, 'Sorry!'), self.poster.errors[-1])
+
+    @httpretty.activate
+    def test_retains_json_error_string(self):
+        httpretty.register_uri(
+            httpretty.POST, 'http://example.com/drop/',
+            status=503,
+            content_type='application/json',
+            body='{"error": "Not today, thank you!"}')
+        self.poster = DozupPoster('http://example.com/drop/')
+        strm = io.BytesIO(b'this is a message')
+
+        result = self.poster.post('banko.txt', strm)
+
+        self.assertFalse(result)
+        self.assertEqual(DozupError(503, 'Not today, thank you!'), self.poster.errors[-1])
