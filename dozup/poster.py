@@ -1,10 +1,11 @@
 # -*- coding: UTF-8 -*-
 
-
+import re
 import requests
 
 
 SUCCESSFUL_CODES = requests.codes.ok, requests.codes.created, requests.codes.accepted
+JSON_CONTENT_TYPES = re.compile(r'application/(\w+\+)?json')
 
 
 class DozupError(object):
@@ -39,11 +40,14 @@ class DozupPoster(object):
             return True
         if response.headers.get('Content-Type') == 'text/plain':
             self.errors.append(DozupError(response.status_code, response.text))
-        if response.headers.get('Content-Type') == 'application/json':
+        if JSON_CONTENT_TYPES.match(response.headers.get('Content-Type')):
             obj = response.json()
-            if 'error' in obj:
-                msg = obj['error']
+            if 'errors' in obj:
+                msgs = obj['errors']
+            elif 'error' in obj:
+                msgs = [obj['error']]
             else:
-                msg = response.text()
-            self.errors.append(DozupError(response.status_code, msg))
+                msgs = [response.reason]
+            for msg in msgs:
+                self.errors.append(DozupError(response.status_code, msg))
         return False
