@@ -23,5 +23,11 @@ def main(argv):
     queue = DozupQueue(options.data_dir)
     poster = DozupPoster(options.url)
 
-    for file_name, strm in queue.iter_tasks():
-        poster.post(file_name, strm)
+    errors = []
+    for task in queue.iter_tasks():
+        is_ok = poster.post(task.name, task.input)
+        if not is_ok:
+            task.push_back()
+            errors += poster.errors
+
+    return errors

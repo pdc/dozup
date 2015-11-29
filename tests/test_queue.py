@@ -110,10 +110,37 @@ class DozupQueueTests(unittest.TestCase):
         self.then_file_should_be_done('foo/bar.txt')
         self.then_file_should_be_done('b/ar000001.zip')
 
+    def test_pushes_file_back_to_todo_if_task_pushed_back(self):
+        self.given_a_file('todo/foo/bar.txt', 'content of bar')
+        self.given_a_file('todo/foo/baz.txt', 'content of baz')
+
+        self.when_iterating_over_tasks_pushing_them_back()
+
+        self.then_tasks_should_have_names_and_contents(set([
+            ('foo/bar.txt', 'content of bar'),
+        ]))
+        self.then_file_should_be_todo('foo/bar.txt')
+        self.then_file_should_be_todo('foo/baz.txt')
+
+    def test_pushes_file_back_to_todo_if_task_pushed_back_zip(self):
+        self.given_a_zip_archive('todo/ar0000/ar000001.zip', [
+            ('ar000001/bee.txt', 'forst'),
+            ('ar000001/cat.txt', 'seknd'),
+        ])
+
+        self.when_iterating_over_tasks_pushing_them_back()
+
+        self.then_tasks_should_have_names_and_contents(set([
+            ('ar0000/ar000001.zip/ar000001/bee.txt', 'forst'),
+        ]))
+        self.then_file_should_be_todo('ar0000/ar000001.zip')
+
     # Helpers
 
     def create_a_file(self, relative_path, content=''):
-        os.makedirs(os.path.join(self.dir_path, os.path.dirname(relative_path)))
+        subdir_path = os.path.join(self.dir_path, os.path.dirname(relative_path))
+        if not os.path.exists(subdir_path):
+            os.makedirs(subdir_path)
         with open(os.path.join(self.dir_path, relative_path), 'wb') as strm:
             strm.write(content)
     given_a_file = create_a_file
@@ -149,8 +176,14 @@ class DozupQueueTests(unittest.TestCase):
 
     def when_iterating_over_tasks(self):
         self.tasks = set()
-        for file_path, strm in self.dozup_queue.iter_tasks():
-            self.tasks.add((file_path, strm.read()))
+        for task in self.dozup_queue.iter_tasks():
+            self.tasks.add((task, task.input.read()))
+
+    def when_iterating_over_tasks_pushing_them_back(self):
+        self.tasks = set()
+        for task in self.dozup_queue.iter_tasks():
+            self.tasks.add((task, task.input.read()))
+            task.push_back()
 
     def then_file_should_be_claimed(self, file_path):
         self.assertFalse(os.path.exists(os.path.join(self.dir_path, "todo", file_path)))
@@ -160,5 +193,10 @@ class DozupQueueTests(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.dir_path, "doing", file_path)))
         self.assertTrue(os.path.exists(os.path.join(self.dir_path, "done", file_path)))
 
-    def then_tasks_should_have_names_and_contents(self, expected_tasks):
-        self.assertEqual(expected_tasks, self.tasks)
+    def then_file_should_be_todo(self, file_path):
+        self.assertFalse(os.path.exists(os.path.join(self.dir_path, "doing", file_path)))
+        self.assertTrue(os.path.exists(os.path.join(self.dir_path, "todo", file_path)))
+
+    def then_tasks_should_have_names_and_contents(self, expected_filename_contents):
+        actual_filename_contents = set((task.name, content) for task, content in self.tasks)
+        self.assertEqual(expected_filename_contents, actual_filename_contents)

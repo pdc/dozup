@@ -14,6 +14,18 @@ import os
 import zipfile
 
 
+class Task(object):
+    """One file to post to the server."""
+    is_pushed_back = False
+
+    def __init__(self, name, input_stream):
+        self.name = name
+        self.input = input_stream
+
+    def push_back(self):
+        self.is_pushed_back = True
+
+
 class DozupQueue(object):
     """A queue backed by a directory structure.
 
@@ -73,14 +85,26 @@ class DozupQueue(object):
             file_path = self.claim_file()
             if not file_path:
                 break
+            is_pushed_back = False
             if file_path.endswith('.zip'):
                 archive = zipfile.ZipFile(os.path.join(self.doing_dir, file_path), 'r')
                 for info in archive.infolist():
-                    yield file_path + '/' + info.filename, archive.open(info)
+                    task = Task(file_path + '/' + info.filename, archive.open(info))
+                    yield task
+                    if task.is_pushed_back:
+                        is_pushed_back = True
+                        break
                 archive.close()
             else:
                 strm = open(os.path.join(self.doing_dir, file_path), 'rb')
-                yield file_path, strm
+                task = Task(file_path, strm)
+                yield task
                 strm.close()
-            os.makedirs(os.path.join(self.done_dir, os.path.dirname(file_path)))
-            os.rename(os.path.join(self.doing_dir, file_path), os.path.join(self.done_dir, file_path))
+                if task.is_pushed_back:
+                    is_pushed_back = True
+            if is_pushed_back:
+                os.rename(os.path.join(self.doing_dir, file_path), os.path.join(self.todo_dir, file_path))
+                break
+            else:
+                os.makedirs(os.path.join(self.done_dir, os.path.dirname(file_path)))
+                os.rename(os.path.join(self.doing_dir, file_path), os.path.join(self.done_dir, file_path))
